@@ -129,6 +129,18 @@ function populateTiles(
   return newTiles;
 }
 
+function explode(tiles: ITile[]): ITile[] {
+  return tiles.map((m) => {
+    const o = { ...m };
+    if (o.content === "💣") {
+      o.display = "💥";
+    } else if (o.flagged) {
+      o.display = "❌";
+    }
+    return o;
+  });
+}
+
 function Mine(props: { tile: ITile; onLeftClick: (pos: number) => void }) {
   const tile = props.tile;
   return (
@@ -148,6 +160,7 @@ function MineField(props: {
   width: number;
   phase: string;
   initGameAt: (startPosition: number) => void;
+  revealAt: (startPosition: number) => void;
 }) {
   return (
     <div
@@ -166,6 +179,8 @@ function MineField(props: {
           onLeftClick={(pos: number) => {
             if (props.phase === "ready") {
               props.initGameAt(pos);
+            } else if (props.phase === "playing") {
+              props.revealAt(pos);
             }
           }}
         />
@@ -209,6 +224,17 @@ export function Game() {
     setPhase("playing");
   }
 
+  function revealAt(startPosition: number) {
+    const tile = tiles[startPosition];
+    if (tile.revealed || tile.flagged) {
+      return;
+    }
+    if (tile.content === "💣") {
+      setTiles(explode(tiles));
+      setPhase("lost");
+    }
+  }
+
   return (
     <>
       <Info mines={mines} phase={phase} />
@@ -217,6 +243,7 @@ export function Game() {
         width={9}
         phase={phase}
         initGameAt={initGameAt}
+        revealAt={revealAt}
       />
     </>
   );
