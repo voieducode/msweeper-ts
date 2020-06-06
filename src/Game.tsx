@@ -172,7 +172,10 @@ function getButtonStyle(tile: ITile): string | undefined {
     case 6:
     case 7:
     case 8:
-      return `number${tile.content.toString()}`;
+      if (tile.revealed) {
+        return `number${tile.content.toString()}`;
+      }
+      break;
   }
   return undefined;
 }

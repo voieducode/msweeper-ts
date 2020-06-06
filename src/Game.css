@@ -1,31 +1,39 @@
 .number1 {
   color: blue;
+  border-style: none;
 }
 
 .number2 {
   color: green;
+  border-style: none;
 }
 
 .number3 {
   color: red;
+  border-style: none;
 }
 
 .number4 {
   color: darkblue;
+  border-style: none;
 }
 
 .number5 {
   color: darkred;
+  border-style: none;
 }
 
 .number6 {
   color: cyan;
+  border-style: none;
 }
 
 .number7 {
   color: black;
+  border-style: none;
 }
 
 .number8 {
   color: grey;
+  border-style: none;
 }
