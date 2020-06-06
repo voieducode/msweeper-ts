@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import "./Game.css";
 
 interface ITile {
   id: number;
@@ -141,12 +142,48 @@ function explode(tiles: ITile[]): ITile[] {
   });
 }
 
+function revealBombs(tiles: ITile[]) {
+  return tiles.map((m) => {
+    const o = { ...m };
+    if (o.content === "💣") {
+      o.revealed = true;
+      o.display = "💣";
+    }
+    return o;
+  });
+}
+
+function areAllSafeTilesRevealed(tiles: ITile[], mines: number): boolean {
+  const revealed = tiles.reduce(
+    (r: number, mine: ITile) => (mine.revealed ? r + 1 : r),
+    0
+  );
+  // Winning condition = all safe tiles are revealead
+  return revealed === tiles.length - mines;
+}
+
+function getButtonStyle(tile: ITile): string | undefined {
+  switch (tile.content) {
+    case 1:
+    case 2:
+    case 3:
+    case 4:
+    case 5:
+    case 6:
+    case 7:
+    case 8:
+      return `number${tile.content.toString()}`;
+  }
+  return undefined;
+}
+
 function Mine(props: { tile: ITile; onLeftClick: (pos: number) => void }) {
   const tile = props.tile;
   return (
     <button
       style={{ fontSize: "small", fontWeight: "bold", padding: "1px" }}
-      disabled={tile.revealed}
+      className={getButtonStyle(tile)}
+      disabled={tile.revealed && tile.content === 0}
       value={tile.id}
       onClick={() => props.onLeftClick(tile.id)}
     >
@@ -232,6 +269,24 @@ export function Game() {
     if (tile.content === "💣") {
       setTiles(explode(tiles));
       setPhase("lost");
+    } else {
+      const revealedBoard = reveal(
+        tiles.map((n) => {
+          return { ...n };
+        }),
+        startPosition,
+        width,
+        height
+      );
+
+      if (areAllSafeTilesRevealed(revealedBoard, mines)) {
+        setTiles(revealBombs(revealedBoard));
+        setPhase("won");
+        return;
+      }
+
+      setTiles(revealedBoard);
+      setPhase("playing");
     }
   }
 
