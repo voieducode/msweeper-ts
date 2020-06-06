@@ -10,9 +10,9 @@ interface ITile {
 }
 
 const createMineField = (length: number, display = ""): ITile[] => {
-  const a: ITile[] = [...Array(length)];
+  const tiles: ITile[] = [...Array(length)];
   for (let i = 0; i < length; i++) {
-    a[i] = {
+    tiles[i] = {
       id: i,
       content: "",
       display: display,
@@ -20,27 +20,26 @@ const createMineField = (length: number, display = ""): ITile[] => {
       flagged: false,
     };
   }
-  return a;
+  return tiles;
 };
 
 function neighbours(center: number, width: number, height: number) {
-  const pos = center;
-  const isLeftEmpty = pos % width === 0;
-  const isUpEmpty = pos < width;
-  const isDownEmpty = pos >= width * (height - 1);
-  const isRightEmpty = (pos + 1) % width === 0;
+  const isLeftEmpty = center % width === 0;
+  const isUpEmpty = center < width;
+  const isDownEmpty = center >= width * (height - 1);
+  const isRightEmpty = (center + 1) % width === 0;
 
-  const leftUp = isLeftEmpty || isUpEmpty ? -1 : pos - width - 1;
-  const left = isLeftEmpty ? -1 : pos - 1;
-  const leftDown = isLeftEmpty || isDownEmpty ? -1 : pos + width - 1;
+  const leftUp = isLeftEmpty || isUpEmpty ? -1 : center - width - 1;
+  const left = isLeftEmpty ? -1 : center - 1;
+  const leftDown = isLeftEmpty || isDownEmpty ? -1 : center + width - 1;
 
-  const rightUp = isRightEmpty || isUpEmpty ? -1 : pos - width + 1;
-  const right = isRightEmpty ? -1 : pos + 1;
-  const rightDown = isRightEmpty || isDownEmpty ? -1 : pos + width + 1;
+  const rightUp = isRightEmpty || isUpEmpty ? -1 : center - width + 1;
+  const right = isRightEmpty ? -1 : center + 1;
+  const rightDown = isRightEmpty || isDownEmpty ? -1 : center + width + 1;
 
-  const up = isUpEmpty ? -1 : pos - width;
+  const up = isUpEmpty ? -1 : center - width;
 
-  const down = isDownEmpty ? -1 : pos + width;
+  const down = isDownEmpty ? -1 : center + width;
 
   return [left, right, up, down, leftUp, leftDown, rightUp, rightDown];
 }
@@ -58,12 +57,11 @@ Flood-fill (node, target-color, replacement-color):
 */
 function reveal(
   tiles: ITile[],
-  at: number,
+  pos: number,
   width: number,
   height: number,
   depth = 0
 ): ITile[] {
-  const pos = at;
   const tile = tiles[pos];
 
   if (tile.revealed) return tiles;
@@ -93,12 +91,11 @@ function reveal(
 }
 
 function populateTiles(
-  startPosition: number,
+  initialPosition: number,
   width: number,
   height: number,
   mines: number
 ) {
-  const initialPosition = startPosition;
   const numberTiles = width * height;
   let numberMines = 0;
   const newTiles = createMineField(numberTiles);
@@ -113,6 +110,7 @@ function populateTiles(
       numberMines += 1;
     }
   }
+
   for (let i = 0; i < numberTiles; i++) {
     if (newTiles[i].content === "💣") {
       continue;
@@ -127,6 +125,7 @@ function populateTiles(
     );
     newTiles[i].content = countMines;
   }
+
   return newTiles;
 }
 
@@ -180,7 +179,11 @@ function getButtonStyle(tile: ITile): string | undefined {
   return undefined;
 }
 
-function Mine(props: { tile: ITile; onLeftClick: (pos: number) => void }) {
+function Mine(props: {
+  tile: ITile;
+  onLeftClick: (pos: number) => void;
+  gasp: (down: boolean) => void;
+}) {
   const tile = props.tile;
   return (
     <button
@@ -189,6 +192,9 @@ function Mine(props: { tile: ITile; onLeftClick: (pos: number) => void }) {
       disabled={tile.revealed && tile.content === 0}
       value={tile.id}
       onClick={() => props.onLeftClick(tile.id)}
+      onMouseDown={() => props.gasp(true)}
+      onMouseUp={() => props.gasp(false)}
+      onMouseLeave={() => props.gasp(false)}
     >
       {tile.display}
     </button>
@@ -201,6 +207,7 @@ function MineField(props: {
   phase: string;
   initGameAt: (startPosition: number) => void;
   revealAt: (startPosition: number) => void;
+  gasp: (down: boolean) => void;
 }) {
   return (
     <div
@@ -223,6 +230,7 @@ function MineField(props: {
               props.revealAt(pos);
             }
           }}
+          gasp={props.gasp}
         />
       ))}
     </div>
@@ -266,30 +274,45 @@ export function Game() {
 
   function revealAt(startPosition: number) {
     const tile = tiles[startPosition];
+
     if (tile.revealed || tile.flagged) {
       return;
     }
+
     if (tile.content === "💣") {
       setTiles(explode(tiles));
-      setPhase("lost");
+      setPhase("lost 💀");
+      return;
+    }
+
+    const revealedBoard = reveal(
+      tiles.map((n) => {
+        return { ...n };
+      }),
+      startPosition,
+      width,
+      height
+    );
+
+    if (areAllSafeTilesRevealed(revealedBoard, mines)) {
+      setTiles(revealBombs(revealedBoard));
+      setPhase("won 😎");
+      return;
+    }
+
+    setTiles(revealedBoard);
+    setPhase("playing");
+  }
+
+  function gasp(down: boolean) {
+    if (!phase.startsWith("playing")) {
+      return;
+    }
+
+    if (down) {
+      setPhase(phase + " 😰");
     } else {
-      const revealedBoard = reveal(
-        tiles.map((n) => {
-          return { ...n };
-        }),
-        startPosition,
-        width,
-        height
-      );
-
-      if (areAllSafeTilesRevealed(revealedBoard, mines)) {
-        setTiles(revealBombs(revealedBoard));
-        setPhase("won");
-        return;
-      }
-
-      setTiles(revealedBoard);
-      setPhase("playing");
+      setPhase(phase.split(" ")[0]);
     }
   }
 
@@ -302,6 +325,7 @@ export function Game() {
         phase={phase}
         initGameAt={initGameAt}
         revealAt={revealAt}
+        gasp={gasp}
       />
     </>
   );
