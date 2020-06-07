@@ -7,18 +7,75 @@ interface ITile {
   display: string;
   revealed: boolean;
   flagged: boolean;
+  markedForNumberReveal: boolean;
+  isNumber(): boolean;
+  revealBomb(): ITile;
+  explode(): ITile;
+  clone(): ITile;
+}
+
+class Tile implements ITile {
+  constructor(
+    public id: number,
+    public display: string = "",
+    public content: string | number = "",
+    public revealed: boolean = false,
+    public flagged: boolean = false,
+    public markedForNumberReveal = false
+  ) {}
+
+  public isNumber() {
+    switch (this.content) {
+      case 1:
+      case 2:
+      case 3:
+      case 4:
+      case 5:
+      case 6:
+      case 7:
+      case 8:
+        return true;
+    }
+    return false;
+  }
+
+  public clone(): ITile {
+    return new Tile(
+      this.id,
+      this.display,
+      this.content,
+      this.revealed,
+      this.flagged,
+      this.markedForNumberReveal
+    );
+  }
+
+  public revealBomb(): ITile {
+    const copy = this.clone();
+    if (this.content === "💣") {
+      copy.revealed = true;
+      copy.display = "💣";
+    }
+
+    return copy;
+  }
+
+  public explode(): ITile {
+    const copy = this.clone();
+    if (this.content === "💣") {
+      copy.display = "💥";
+    } else if (this.flagged) {
+      copy.display = "❌";
+    }
+
+    return copy;
+  }
 }
 
 const createMineField = (length: number, display = ""): ITile[] => {
   const tiles: ITile[] = [...Array(length)];
   for (let i = 0; i < length; i++) {
-    tiles[i] = {
-      id: i,
-      content: "",
-      display: display,
-      revealed: false,
-      flagged: false,
-    };
+    tiles[i] = new Tile(i);
   }
   return tiles;
 };
@@ -130,26 +187,11 @@ function populateTiles(
 }
 
 function explode(tiles: ITile[]): ITile[] {
-  return tiles.map((m) => {
-    const o = { ...m };
-    if (o.content === "💣") {
-      o.display = "💥";
-    } else if (o.flagged) {
-      o.display = "❌";
-    }
-    return o;
-  });
+  return tiles.map((m) => m.explode());
 }
 
 function revealBombs(tiles: ITile[]) {
-  return tiles.map((m) => {
-    const o = { ...m };
-    if (o.content === "💣") {
-      o.revealed = true;
-      o.display = "💣";
-    }
-    return o;
-  });
+  return tiles.map((m) => m.revealBomb());
 }
 
 function areAllSafeTilesRevealed(tiles: ITile[], mines: number): boolean {
@@ -161,40 +203,66 @@ function areAllSafeTilesRevealed(tiles: ITile[], mines: number): boolean {
   return revealed === tiles.length - mines;
 }
 
-function getButtonStyle(tile: ITile): string | undefined {
-  switch (tile.content) {
-    case 1:
-    case 2:
-    case 3:
-    case 4:
-    case 5:
-    case 6:
-    case 7:
-    case 8:
-      if (tile.revealed) {
-        return `number${tile.content.toString()}`;
-      }
-      break;
-  }
-  return undefined;
+function markForNumberReveal(
+  startPosition: number,
+  tiles: ITile[],
+  mark: boolean,
+  width: number,
+  height: number
+) {
+  const clone = tiles.map((m) => m.clone());
+  const validNeighbours = neighbours(startPosition, width, height).filter(
+    (pos) => pos >= 0
+  );
+
+  validNeighbours.forEach((pos) => {
+    const t = clone[pos];
+    if (t && !t.revealed) {
+      t.markedForNumberReveal = mark;
+    }
+  });
+
+  return clone;
 }
 
 function Mine(props: {
   tile: ITile;
   onLeftClick: (pos: number) => void;
-  gasp: (down: boolean) => void;
+  onAuxClick: (pos: number) => void;
+  gasp: (pos: number, down: boolean, middle: boolean) => void;
 }) {
   const tile = props.tile;
+
+  function getButtonStyle(): string | undefined {
+    const classNames = [];
+    if (tile.markedForNumberReveal) {
+      classNames.push("pressed");
+    }
+    if (tile.isNumber && tile.revealed) {
+      classNames.push(`number${tile.content.toString()}`);
+    }
+    return classNames.join(" ");
+  }
+
+  const MIDDLE_BUTTON = 1;
+
   return (
     <button
       style={{ fontSize: "small", fontWeight: "bold", padding: "1px" }}
-      className={getButtonStyle(tile)}
+      className={getButtonStyle()}
       disabled={tile.revealed && tile.content === 0}
       value={tile.id}
       onClick={() => props.onLeftClick(tile.id)}
-      onMouseDown={() => props.gasp(true)}
-      onMouseUp={() => props.gasp(false)}
-      onMouseLeave={() => props.gasp(false)}
+      onAuxClick={() => props.onAuxClick(tile.id)}
+      onMouseDown={(event) =>
+        props.gasp(tile.id, true, event.button === MIDDLE_BUTTON)
+      }
+      onMouseUp={(event) =>
+        props.gasp(tile.id, false, event.button === MIDDLE_BUTTON)
+      }
+      onMouseLeave={(event) =>
+        props.gasp(tile.id, false, event.button === MIDDLE_BUTTON)
+      }
     >
       {tile.display}
     </button>
@@ -207,7 +275,7 @@ function MineField(props: {
   phase: string;
   initGameAt: (startPosition: number) => void;
   revealAt: (startPosition: number) => void;
-  gasp: (down: boolean) => void;
+  gasp: (pos: number, down: boolean, middle: boolean) => void;
 }) {
   return (
     <div
@@ -227,6 +295,11 @@ function MineField(props: {
             if (props.phase === "ready") {
               props.initGameAt(pos);
             } else if (props.phase === "playing") {
+              props.revealAt(pos);
+            }
+          }}
+          onAuxClick={(pos: number) => {
+            if (props.phase === "playing") {
               props.revealAt(pos);
             }
           }}
@@ -272,7 +345,7 @@ export function Game() {
     setPhase("playing");
   }
 
-  function revealAt(startPosition: number) {
+  function revealAt(startPosition: number, highlighOnly = false) {
     const tile = tiles[startPosition];
 
     if (tile.revealed || tile.flagged) {
@@ -287,7 +360,7 @@ export function Game() {
 
     const revealedBoard = reveal(
       tiles.map((n) => {
-        return { ...n };
+        return n.clone();
       }),
       startPosition,
       width,
@@ -304,15 +377,19 @@ export function Game() {
     setPhase("playing");
   }
 
-  function gasp(down: boolean) {
+  function gasp(pos: number, down: boolean, middle: boolean) {
     if (!phase.startsWith("playing")) {
       return;
     }
 
     if (down) {
-      setPhase(phase + " 😰");
+      setPhase("playing 😰");
     } else {
       setPhase(phase.split(" ")[0]);
+    }
+
+    if (tiles[pos].isNumber() && tiles[pos].revealed && middle) {
+      setTiles(markForNumberReveal(pos, tiles, down, width, height));
     }
   }
 

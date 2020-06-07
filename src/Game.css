@@ -1,3 +1,7 @@
+.pressed {
+  border-style: groove;
+}
+
 .number1 {
   color: blue;
   border-style: none;
