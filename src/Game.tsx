@@ -12,6 +12,8 @@ interface ITile {
   revealBomb(): ITile;
   explode(): ITile;
   clone(): ITile;
+  isUnsafe(): boolean;
+  hasBomb(): boolean;
 }
 
 class Tile implements ITile {
@@ -50,9 +52,17 @@ class Tile implements ITile {
     );
   }
 
+  public hasBomb(): boolean {
+    return this.content === "💣";
+  }
+
+  public isUnsafe(): boolean {
+    return !this.revealed && this.hasBomb() && !this.flagged;
+  }
+
   public revealBomb(): ITile {
     const copy = this.clone();
-    if (this.content === "💣") {
+    if (this.hasBomb()) {
       copy.revealed = true;
       copy.display = "💣";
     }
@@ -62,7 +72,7 @@ class Tile implements ITile {
 
   public explode(): ITile {
     const copy = this.clone();
-    if (this.content === "💣") {
+    if (this.hasBomb()) {
       copy.display = "💥";
     } else if (this.flagged) {
       copy.display = "❌";
@@ -125,7 +135,7 @@ function reveal(
 
   if (tile.content === "💣" || tile.flagged) return tiles;
 
-  if ([1, 2, 3, 4, 5, 6, 7, 8].includes(tile.content as number)) {
+  if (tile.isNumber()) {
     tile.display = tile.content.toString();
     tile.revealed = true;
   }
@@ -225,10 +235,40 @@ function markForNumberReveal(
   return clone;
 }
 
+function revealSafeNumbers(
+  startPosition: number,
+  tiles: ITile[],
+  width: number,
+  height: number
+): ITile[] {
+  const validNeighbours = neighbours(startPosition, width, height)
+    .filter((pos) => pos >= 0)
+    .map((pos) => tiles[pos]);
+
+  const unsafeNeighbours = validNeighbours.reduce(
+    (unsafe, m) => (m.isUnsafe() ? unsafe + 1 : unsafe),
+    0
+  );
+
+  if (unsafeNeighbours > 0) {
+    return tiles;
+  }
+
+  return tiles.map((m) => {
+    const copy = m.clone();
+    if (!copy.revealed && copy.isNumber()) {
+      copy.display = copy.content.toString();
+      copy.revealed = true;
+    }
+    return copy;
+  });
+}
+
 function Mine(props: {
   tile: ITile;
   onLeftClick: (pos: number) => void;
-  onAuxClick: (pos: number) => void;
+  onMiddleClick: (pos: number) => void;
+  onRightClick: (pos: number) => void;
   gasp: (pos: number, down: boolean, middle: boolean) => void;
 }) {
   const tile = props.tile;
@@ -253,7 +293,15 @@ function Mine(props: {
       disabled={tile.revealed && tile.content === 0}
       value={tile.id}
       onClick={() => props.onLeftClick(tile.id)}
-      onAuxClick={() => props.onAuxClick(tile.id)}
+      onAuxClick={(event) => {
+        if (event.button === MIDDLE_BUTTON) {
+          props.onMiddleClick(tile.id);
+        }
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        props.onRightClick(tile.id);
+      }}
       onMouseDown={(event) =>
         props.gasp(tile.id, true, event.button === MIDDLE_BUTTON)
       }
@@ -274,8 +322,9 @@ function MineField(props: {
   width: number;
   phase: string;
   initGameAt: (startPosition: number) => void;
-  revealAt: (startPosition: number) => void;
+  revealAt: (startPosition: number, safe: boolean) => void;
   gasp: (pos: number, down: boolean, middle: boolean) => void;
+  cycleFlagAt: (startPosition: number) => void;
 }) {
   return (
     <div
@@ -295,12 +344,17 @@ function MineField(props: {
             if (props.phase === "ready") {
               props.initGameAt(pos);
             } else if (props.phase === "playing") {
-              props.revealAt(pos);
+              props.revealAt(pos, false);
             }
           }}
-          onAuxClick={(pos: number) => {
+          onMiddleClick={(pos: number) => {
             if (props.phase === "playing") {
-              props.revealAt(pos);
+              props.revealAt(pos, true);
+            }
+          }}
+          onRightClick={(pos: number) => {
+            if (props.phase === "playing") {
+              props.cycleFlagAt(pos);
             }
           }}
           gasp={props.gasp}
@@ -345,10 +399,17 @@ export function Game() {
     setPhase("playing");
   }
 
-  function revealAt(startPosition: number, highlighOnly = false) {
+  function revealAt(startPosition: number, safe = false) {
     const tile = tiles[startPosition];
 
-    if (tile.revealed || tile.flagged) {
+    if (tile.flagged) {
+      return;
+    }
+
+    if (tile.revealed) {
+      if (safe && tile.isNumber()) {
+        setTiles(revealSafeNumbers(startPosition, tiles, width, height));
+      }
       return;
     }
 
@@ -393,6 +454,26 @@ export function Game() {
     }
   }
 
+  function cycleFlagAt(startPosition: number) {
+    if (tiles[startPosition].revealed) {
+      return;
+    }
+    const newTiles = tiles.map((t) => {
+      const newT = t.clone();
+      if (newT.id === startPosition) {
+        newT.flagged = !newT.flagged;
+        newT.display = newT.flagged ? "🚩" : "";
+      }
+      return newT;
+    });
+    if (areAllSafeTilesRevealed(newTiles, mines)) {
+      setTiles(revealBombs(newTiles));
+      setPhase("won 😎");
+    } else {
+      setTiles(newTiles);
+    }
+  }
+
   return (
     <>
       <Info mines={mines} phase={phase} />
@@ -403,6 +484,7 @@ export function Game() {
         initGameAt={initGameAt}
         revealAt={revealAt}
         gasp={gasp}
+        cycleFlagAt={cycleFlagAt}
       />
     </>
   );
